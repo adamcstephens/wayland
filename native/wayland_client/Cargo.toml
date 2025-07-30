@@ -1,20 +1,20 @@
 [package]
-name = "wayland_client_nif"
+name = "wayland_client"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "wayland_client_nif"
+name = "wayland_client"
 crate-type = ["cdylib"]
 
 [dependencies]
-rustler = "0.30"
-wayland-client = "0.31"
-wayland-protocols = "0.31"
-wayland-sys = "0.31"
-nix = "0.28"
-thiserror = "1.0"
+rustler = "0.36.2"
+wayland-client = "0.31.11"
+wayland-protocols = "0.32.9"
+wayland-sys = "0.31.7"
+nix = "0.30.1"
+thiserror = "2.0.12"
 
 [dependencies.rustler_sys]
-version = "2.4"
+version = "2.4.3"
 optional = true
