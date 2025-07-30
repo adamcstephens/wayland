@@ -1,0 +1,35 @@
+# Elixir build artifacts
+/_build/
+/cover/
+/deps/
+/doc/
+/.fetch
+erl_crash.dump
+*.ez
+*.beam
+
+# Rust build artifacts
+/native/*/target/
+/native/**/target/
+Cargo.lock
+
+# IDE files
+/.idea/
+/.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Mix lock file
+/mix.lock
+
+# Temporary files
+/tmp/
+*.tmp
+
+# Log files
+*.log
