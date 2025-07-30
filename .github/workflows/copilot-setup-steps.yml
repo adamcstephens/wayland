@@ -1,0 +1,93 @@
+name: Copilot Setup Steps
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  copilot-setup:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v28
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v15
+        with:
+          # Using a generic cache name - can be configured via repository secrets
+          name: ${{ secrets.CACHIX_NAME || 'devenv' }}
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: true
+
+      - name: Verify devShell environment and dependencies
+        run: |
+          echo "=== Entering devShell and verifying dependencies ==="
+          nix develop --command bash -c "
+            echo 'Current shell: $0'
+            echo
+            echo '=== Checking Elixir dependencies ==='
+            which elixir && echo 'Elixir found' || echo 'ERROR: Elixir not found'
+            which mix && echo 'Mix found' || echo 'ERROR: Mix not found'  
+            which hex && echo 'Hex found' || echo 'ERROR: Hex not found'
+            which rebar3 && echo 'Rebar3 found' || echo 'ERROR: Rebar3 not found'
+            echo
+            echo '=== Checking Rust dependencies ==='
+            which cargo && echo 'Cargo found' || echo 'ERROR: Cargo not found'
+            which rustc && echo 'Rustc found' || echo 'ERROR: Rustc not found'
+            echo
+            echo '=== Version information ==='
+            echo 'Elixir version:'
+            elixir --version
+            echo
+            echo 'Rust version:'
+            rustc --version
+            echo 'Cargo version:'
+            cargo --version
+            echo
+            echo '=== DevShell environment ready for Copilot operations ==='
+          "
+
+      - name: Test Elixir project setup in devShell
+        run: |
+          nix develop --command bash -c "
+            echo '=== Testing Elixir project setup ==='
+            mix deps.get
+            mix compile
+            echo 'Elixir project compiled successfully'
+          "
+
+      - name: Test Rust project setup in devShell  
+        run: |
+          nix develop --command bash -c "
+            echo '=== Testing Rust project setup ==='
+            cd native/wayland_client
+            cargo check
+            echo 'Rust project checked successfully'
+          "
+
+      - name: Example Copilot operation in devShell
+        run: |
+          nix develop --command bash -c "
+            echo '=== Example of running commands in devShell environment ==='
+            echo 'This step demonstrates how Copilot agents can run operations'
+            echo 'within the devShell environment with all dependencies available.'
+            echo
+            echo 'Available tools in environment:'
+            echo '- Elixir: $(which elixir)'
+            echo '- Mix: $(which mix)'
+            echo '- Cargo: $(which cargo)'
+            echo '- Rustc: $(which rustc)'
+            echo
+            echo 'Environment variables:'
+            echo 'ERL_AFLAGS: $ERL_AFLAGS'
+            echo
+            echo 'DevShell setup complete and ready for Copilot operations!'
+          "

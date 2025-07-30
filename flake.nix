@@ -33,6 +33,7 @@
               beamPackages.rebar3
 
               pkgs.cargo
+              pkgs.rustc
             ]
             ++ (lib.optionals pkgs.stdenv.isLinux [ pkgs.inotify-tools ]);
 
