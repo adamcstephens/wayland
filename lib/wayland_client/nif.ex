@@ -1,4 +1,6 @@
 defmodule WaylandClient.Nif do
+  use Rustler, otp_app: :wayland_client
+
   @moduledoc """
   Native Interface Functions (NIF) for Wayland client operations.
 
@@ -17,7 +19,10 @@ defmodule WaylandClient.Nif do
 
   # Stub implementations for when Rust NIF is not available
   @doc false
-  defp nif_error(func), do: {:error, "NIF not available: #{func}. Install rustler dependency and enable Rust compilation."}
+  defp nif_error(func),
+    do:
+      {:error,
+       "NIF not available: #{func}. Install rustler dependency and enable Rust compilation."}
 
   # Display functions
   def connect(), do: nif_error(:connect)
@@ -45,6 +50,7 @@ defmodule WaylandClient.Nif do
 
   # Buffer functions
   def create_shm_pool(_display, _size), do: nif_error(:create_shm_pool)
+
   def create_buffer(_pool, _offset, _width, _height, _stride, _format),
     do: nif_error(:create_buffer)
 
@@ -61,3 +67,4 @@ defmodule WaylandClient.Nif do
   def get_version(), do: nif_error(:get_version)
   def get_protocol_version(_interface), do: nif_error(:get_protocol_version)
 end
+
