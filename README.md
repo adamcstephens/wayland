@@ -2,6 +2,8 @@
 
 A complete Elixir library for building Wayland clients using Rustler and the Smithay wayland-client Rust library.
 
+> **⚠️ Current Status**: The library compiles successfully but Rust NIF functionality is currently disabled due to dependency access restrictions. Full functionality requires installing the `rustler` dependency from hex.pm and enabling Rust compilation.
+
 ## Features
 
 - **Display Connection Management**: Connect to Wayland display servers
@@ -29,6 +31,41 @@ end
 - **Rust**: >= 1.70 (for building the NIF)
 - **Wayland**: A running Wayland compositor
 - **System packages**: wayland-dev, libwayland-client0-dev (on Debian/Ubuntu)
+
+## Enabling Full Functionality
+
+The library currently compiles with stub implementations. To enable the full Rust-based Wayland functionality:
+
+1. **Install Rustler dependency**: Uncomment the rustler dependency in `mix.exs`:
+   ```elixir
+   defp deps do
+     [
+       {:rustler, "~> 0.30"}
+     ]
+   end
+   ```
+
+2. **Enable Rust compilation**: Uncomment the rustler configuration in `mix.exs`:
+   ```elixir
+   compilers: [:rustler] ++ Mix.compilers(),
+   rustler_crates: [
+     wayland_client_nif: [
+       path: "native/wayland_client",
+       mode: rustler_mode(Mix.env())
+     ]
+   ]
+   ```
+
+3. **Update NIF module**: In `lib/wayland_client/nif.ex`, uncomment:
+   ```elixir
+   use Rustler, otp_app: :wayland_client, crate: "wayland_client_nif"
+   ```
+
+4. **Install dependencies and compile**:
+   ```bash
+   mix deps.get
+   mix compile
+   ```
 
 ## Quick Start
 

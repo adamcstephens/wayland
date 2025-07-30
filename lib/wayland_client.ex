@@ -27,7 +27,7 @@ defmodule WaylandClient do
   - **Globals**: Server-provided objects like compositor, shell, etc.
   """
 
-  alias WaylandClient.{Display, Surface, Registry, Nif}
+  alias WaylandClient.{Display, Surface, Registry}
 
   @type display :: reference()
   @type surface :: reference()

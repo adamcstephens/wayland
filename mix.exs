@@ -8,13 +8,15 @@ defmodule WaylandClient.MixProject do
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      compilers: [:rustler] ++ Mix.compilers(),
-      rustler_crates: [
-        wayland_client_nif: [
-          path: "native/wayland_client",
-          mode: rustler_mode(Mix.env())
-        ]
-      ],
+      # Rustler compilation disabled due to dependency access issues
+      # Enable when hex.pm access is available:
+      # compilers: [:rustler] ++ Mix.compilers(),
+      # rustler_crates: [
+      #   wayland_client_nif: [
+      #     path: "native/wayland_client",
+      #     mode: rustler_mode(Mix.env())
+      #   ]
+      # ],
       package: package(),
       description: description(),
       source_url: "https://github.com/adamcstephens/wayland",
@@ -33,13 +35,11 @@ defmodule WaylandClient.MixProject do
 
   defp deps do
     [
-      {:rustler, "~> 0.30"},
-      {:ex_doc, "~> 0.31", only: :dev, runtime: false}
+      # Rustler dependency disabled due to hex.pm access issues
+      # Enable when hex.pm access is available:
+      # {:rustler, "~> 0.30"}
     ]
   end
-
-  defp rustler_mode(:prod), do: :release
-  defp rustler_mode(_), do: :debug
 
   defp description do
     "Elixir library for building Wayland clients using Rustler and Smithay wayland-client"

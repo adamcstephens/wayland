@@ -12,9 +12,9 @@ config :ex_unit,
   capture_log: true,
   assert_receive_timeout: 5000
 
-# Rustler configuration for development
-config :rustler,
-  write_beam_file: true
+# Rustler configuration for development (disabled until rustler dependency is enabled)
+# config :rustler,
+#   write_beam_file: true
 
 # Application-specific configuration
 config :wayland_client,
