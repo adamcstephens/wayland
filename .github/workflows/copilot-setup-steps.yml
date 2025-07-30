@@ -1,6 +1,6 @@
 name: Copilot Setup Steps
 
-on:
+"on":
   push:
     branches: [main, master]
   pull_request:
