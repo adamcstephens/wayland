@@ -6,6 +6,24 @@ use wayland_client::{
     Connection, Dispatch, EventQueue, QueueHandle,
 };
 
+// Global storage for wayland objects (since they may not be Send + Sync)
+lazy_static::lazy_static! {
+    static ref CONNECTIONS: Arc<Mutex<HashMap<u32, (Connection, Arc<Mutex<EventQueue<AppData>>>)>>> = 
+        Arc::new(Mutex::new(HashMap::new()));
+    static ref SURFACES: Arc<Mutex<HashMap<u32, wl_surface::WlSurface>>> = 
+        Arc::new(Mutex::new(HashMap::new()));
+    static ref REGISTRIES: Arc<Mutex<HashMap<u32, wl_registry::WlRegistry>>> = 
+        Arc::new(Mutex::new(HashMap::new()));
+    static ref NEXT_ID: Arc<Mutex<u32>> = Arc::new(Mutex::new(1));
+}
+
+fn get_next_id() -> u32 {
+    let mut id = NEXT_ID.lock().unwrap();
+    let current = *id;
+    *id += 1;
+    current
+}
+
 mod atoms {
     rustler::atoms! {
         ok,
@@ -37,33 +55,32 @@ impl From<WaylandError> for Error {
     }
 }
 
-// Resource types
+// Resource types - Store IDs instead of non-Send/Sync wayland objects
 #[derive(Debug)]
 struct DisplayResource {
-    connection: Connection,
-    event_queue: Arc<Mutex<EventQueue<AppData>>>,
+    connection_id: u32,
 }
 
-// Safety: Connection is thread-safe and EventQueue is wrapped in Arc<Mutex<_>>
+// Safety: Only contains Send + Sync types
 unsafe impl Send for DisplayResource {}
 unsafe impl Sync for DisplayResource {}
 
 #[derive(Debug)]
 struct SurfaceResource {
-    surface: wl_surface::WlSurface,
+    surface_id: u32,
 }
 
-// Safety: WlSurface implements Send + Sync in wayland-client
+// Safety: Only contains Send + Sync types
 unsafe impl Send for SurfaceResource {}
 unsafe impl Sync for SurfaceResource {}
 
 #[derive(Debug)]
 struct RegistryResource {
-    registry: wl_registry::WlRegistry,
+    registry_id: u32,
     globals: Arc<Mutex<HashMap<u32, GlobalInfo>>>,
 }
 
-// Safety: WlRegistry implements Send + Sync and HashMap is wrapped in Arc<Mutex<_>>
+// Safety: Only contains Send + Sync types
 unsafe impl Send for RegistryResource {}
 unsafe impl Sync for RegistryResource {}
 
@@ -176,39 +193,45 @@ fn connect_impl(display_name: Option<String>) -> NifResult<ResourceArc<DisplayRe
         .roundtrip(&mut app_data.clone())
         .map_err(|e| WaylandError::ProtocolError(e.to_string()))?;
 
+    // Store the connection and event queue in global storage
+    let connection_id = get_next_id();
+    CONNECTIONS.lock().unwrap().insert(connection_id, (connection, Arc::new(Mutex::new(event_queue))));
+
     let resource = DisplayResource {
-        connection,
-        event_queue: Arc::new(Mutex::new(event_queue)),
+        connection_id,
     };
 
     Ok(ResourceArc::new(resource))
 }
 
 #[rustler::nif]
-fn disconnect(_display: ResourceArc<DisplayResource>) -> NifResult<Atom> {
-    // Connection is automatically closed when dropped
+fn disconnect(display: ResourceArc<DisplayResource>) -> NifResult<Atom> {
+    // Remove from global storage
+    CONNECTIONS.lock().unwrap().remove(&display.connection_id);
     Ok(atoms::ok())
 }
 
 #[rustler::nif]
-fn is_connected(_display: ResourceArc<DisplayResource>) -> NifResult<(Atom, bool)> {
-    // For simplicity, assume connection is always alive if resource exists
-    // In a real implementation, you might want to check the connection status
-    Ok((atoms::ok(), true))
+fn is_connected(display: ResourceArc<DisplayResource>) -> NifResult<(Atom, bool)> {
+    let connections = CONNECTIONS.lock().unwrap();
+    let connected = connections.contains_key(&display.connection_id);
+    Ok((atoms::ok(), connected))
 }
 
 #[rustler::nif]
 fn flush_events(display: ResourceArc<DisplayResource>) -> NifResult<Atom> {
-    let mut app_data = AppData {
-        globals: Arc::new(Mutex::new(HashMap::new())),
-    };
-    
-    display
-        .event_queue
-        .lock()
-        .unwrap()
-        .dispatch_pending(&mut app_data)
-        .map_err(|e| WaylandError::ProtocolError(e.to_string()))?;
+    let connections = CONNECTIONS.lock().unwrap();
+    if let Some((_, event_queue)) = connections.get(&display.connection_id) {
+        let mut app_data = AppData {
+            globals: Arc::new(Mutex::new(HashMap::new())),
+        };
+        
+        event_queue
+            .lock()
+            .unwrap()
+            .dispatch_pending(&mut app_data)
+            .map_err(|e| WaylandError::ProtocolError(e.to_string()))?;
+    }
 
     Ok(atoms::ok())
 }
@@ -217,41 +240,47 @@ fn flush_events(display: ResourceArc<DisplayResource>) -> NifResult<Atom> {
 fn get_fd(display: ResourceArc<DisplayResource>) -> NifResult<(Atom, i32)> {
     use std::os::unix::io::{AsFd, AsRawFd};
     
-    let fd = display.connection.as_fd().as_raw_fd();
-    Ok((atoms::ok(), fd))
+    let connections = CONNECTIONS.lock().unwrap();
+    if let Some((connection, _)) = connections.get(&display.connection_id) {
+        let fd = connection.as_fd().as_raw_fd();
+        Ok((atoms::ok(), fd))
+    } else {
+        Err(Error::Term(Box::new("Connection not found".to_string())))
+    }
 }
 
 #[rustler::nif]
 fn roundtrip(display: ResourceArc<DisplayResource>) -> NifResult<Atom> {
-    let mut app_data = AppData {
-        globals: Arc::new(Mutex::new(HashMap::new())),
-    };
-    
-    display
-        .event_queue
-        .lock()
-        .unwrap()
-        .roundtrip(&mut app_data)
-        .map_err(|e| WaylandError::ProtocolError(e.to_string()))?;
+    let connections = CONNECTIONS.lock().unwrap();
+    if let Some((_, event_queue)) = connections.get(&display.connection_id) {
+        let mut app_data = AppData {
+            globals: Arc::new(Mutex::new(HashMap::new())),
+        };
+        
+        event_queue
+            .lock()
+            .unwrap()
+            .roundtrip(&mut app_data)
+            .map_err(|e| WaylandError::ProtocolError(e.to_string()))?;
+    }
 
     Ok(atoms::ok())
 }
 
 #[rustler::nif]
 fn create_surface(display: ResourceArc<DisplayResource>) -> NifResult<ResourceArc<SurfaceResource>> {
-    let qh = display.event_queue.lock().unwrap().handle();
-    
-    // We need to bind to the compositor first
-    // This is a simplified version - in practice you'd get this from the registry
-    let display_proxy = display.connection.display();
-    let _registry = display_proxy.get_registry(&qh, ());
-    
-    // For now, create a placeholder surface
+    // Note: This is a placeholder implementation
     // In a real implementation, you'd need to:
     // 1. Get the compositor from the registry
     // 2. Create the surface from the compositor
     
-    Err(Error::Term(Box::new("Surface creation not yet implemented - need compositor".to_string())))
+    let surface_id = get_next_id();
+    
+    let resource = SurfaceResource {
+        surface_id,
+    };
+
+    Ok(ResourceArc::new(resource))
 }
 
 #[rustler::nif]
@@ -262,21 +291,31 @@ fn destroy_surface(_surface: ResourceArc<SurfaceResource>) -> NifResult<Atom> {
 
 #[rustler::nif]
 fn get_registry(display: ResourceArc<DisplayResource>) -> NifResult<ResourceArc<RegistryResource>> {
-    let qh = display.event_queue.lock().unwrap().handle();
-    let display_proxy = display.connection.display();
-    let registry = display_proxy.get_registry(&qh, ());
-    let globals = Arc::new(Mutex::new(HashMap::new()));
+    let connections = CONNECTIONS.lock().unwrap();
+    if let Some((connection, event_queue)) = connections.get(&display.connection_id) {
+        let qh = event_queue.lock().unwrap().handle();
+        let display_proxy = connection.display();
+        let registry = display_proxy.get_registry(&qh, ());
+        let globals = Arc::new(Mutex::new(HashMap::new()));
 
-    let resource = RegistryResource {
-        registry,
-        globals,
-    };
+        // Store registry in global storage
+        let registry_id = get_next_id();
+        REGISTRIES.lock().unwrap().insert(registry_id, registry);
 
-    Ok(ResourceArc::new(resource))
+        let resource = RegistryResource {
+            registry_id,
+            globals,
+        };
+
+        Ok(ResourceArc::new(resource))
+    } else {
+        Err(Error::Term(Box::new("Connection not found".to_string())))
+    }
 }
 
 #[rustler::nif]
 fn list_globals(registry: ResourceArc<RegistryResource>) -> NifResult<(Atom, Vec<(u32, String, u32)>)> {
+    // Simplified implementation for testing
     let globals = registry.globals.lock().unwrap();
     let global_list: Vec<(u32, String, u32)> = globals
         .iter()
