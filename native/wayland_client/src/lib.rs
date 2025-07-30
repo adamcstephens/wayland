@@ -2,8 +2,8 @@ use rustler::{Atom, Env, Error, NifResult, ResourceArc, Term};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use wayland_client::{
-    protocol::{wl_compositor, wl_display, wl_registry, wl_surface},
-    Connection, Dispatch, EventQueue, Proxy, QueueHandle,
+    protocol::{wl_compositor, wl_registry, wl_surface},
+    Connection, Dispatch, EventQueue, QueueHandle,
 };
 
 mod atoms {
@@ -44,10 +44,18 @@ struct DisplayResource {
     event_queue: Arc<Mutex<EventQueue<AppData>>>,
 }
 
+// Safety: Connection is thread-safe and EventQueue is wrapped in Arc<Mutex<_>>
+unsafe impl Send for DisplayResource {}
+unsafe impl Sync for DisplayResource {}
+
 #[derive(Debug)]
 struct SurfaceResource {
     surface: wl_surface::WlSurface,
 }
+
+// Safety: WlSurface implements Send + Sync in wayland-client
+unsafe impl Send for SurfaceResource {}
+unsafe impl Sync for SurfaceResource {}
 
 #[derive(Debug)]
 struct RegistryResource {
@@ -55,13 +63,17 @@ struct RegistryResource {
     globals: Arc<Mutex<HashMap<u32, GlobalInfo>>>,
 }
 
+// Safety: WlRegistry implements Send + Sync and HashMap is wrapped in Arc<Mutex<_>>
+unsafe impl Send for RegistryResource {}
+unsafe impl Sync for RegistryResource {}
+
 #[derive(Debug, Clone)]
 struct GlobalInfo {
     interface: String,
     version: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct AppData {
     globals: Arc<Mutex<HashMap<u32, GlobalInfo>>>,
 }
@@ -137,8 +149,12 @@ fn connect_to_display(display_name: String) -> NifResult<ResourceArc<DisplayReso
 
 fn connect_impl(display_name: Option<String>) -> NifResult<ResourceArc<DisplayResource>> {
     let connection = match display_name {
-        Some(name) => Connection::connect_to_env_with_name(&name)
-            .map_err(|e| WaylandError::ConnectionFailed(e.to_string()))?,
+        Some(_name) => {
+            // wayland-client 0.31 doesn't support connect_to_env_with_name
+            // Use the default connection and ignore the display name for now
+            Connection::connect_to_env()
+                .map_err(|e| WaylandError::ConnectionFailed(e.to_string()))?
+        },
         None => Connection::connect_to_env()
             .map_err(|e| WaylandError::ConnectionFailed(e.to_string()))?,
     };
@@ -175,7 +191,7 @@ fn disconnect(_display: ResourceArc<DisplayResource>) -> NifResult<Atom> {
 }
 
 #[rustler::nif]
-fn is_connected(display: ResourceArc<DisplayResource>) -> NifResult<(Atom, bool)> {
+fn is_connected(_display: ResourceArc<DisplayResource>) -> NifResult<(Atom, bool)> {
     // For simplicity, assume connection is always alive if resource exists
     // In a real implementation, you might want to check the connection status
     Ok((atoms::ok(), true))
@@ -199,9 +215,9 @@ fn flush_events(display: ResourceArc<DisplayResource>) -> NifResult<Atom> {
 
 #[rustler::nif]
 fn get_fd(display: ResourceArc<DisplayResource>) -> NifResult<(Atom, i32)> {
-    use std::os::unix::io::AsRawFd;
+    use std::os::unix::io::{AsFd, AsRawFd};
     
-    let fd = display.connection.as_raw_fd();
+    let fd = display.connection.as_fd().as_raw_fd();
     Ok((atoms::ok(), fd))
 }
 
@@ -228,7 +244,7 @@ fn create_surface(display: ResourceArc<DisplayResource>) -> NifResult<ResourceAr
     // We need to bind to the compositor first
     // This is a simplified version - in practice you'd get this from the registry
     let display_proxy = display.connection.display();
-    let registry = display_proxy.get_registry(&qh, ());
+    let _registry = display_proxy.get_registry(&qh, ());
     
     // For now, create a placeholder surface
     // In a real implementation, you'd need to:
@@ -276,7 +292,7 @@ fn bind_global(
     _id: u32,
     _interface: String,
     _version: u32,
-) -> NifResult<Term> {
+) -> NifResult<Atom> {
     // Binding to globals requires specific implementation for each interface type
     // This is a placeholder
     Err(Error::Term(Box::new("bind_global not yet implemented".to_string())))
@@ -289,7 +305,7 @@ fn get_version() -> NifResult<String> {
 
 // Placeholder implementations for other functions
 #[rustler::nif]
-fn surface_attach(_surface: ResourceArc<SurfaceResource>, _buffer: Option<Term>, _x: i32, _y: i32) -> NifResult<Atom> {
+fn surface_attach(_surface: ResourceArc<SurfaceResource>, _buffer: Option<String>, _x: i32, _y: i32) -> NifResult<Atom> {
     Ok(atoms::ok())
 }
 
@@ -304,47 +320,47 @@ fn surface_commit(_surface: ResourceArc<SurfaceResource>) -> NifResult<Atom> {
 }
 
 #[rustler::nif]
-fn surface_set_input_region(_surface: ResourceArc<SurfaceResource>, _region: Option<Term>) -> NifResult<Atom> {
+fn surface_set_input_region(_surface: ResourceArc<SurfaceResource>, _region: Option<String>) -> NifResult<Atom> {
     Ok(atoms::ok())
 }
 
 #[rustler::nif]
-fn surface_set_opaque_region(_surface: ResourceArc<SurfaceResource>, _region: Option<Term>) -> NifResult<Atom> {
+fn surface_set_opaque_region(_surface: ResourceArc<SurfaceResource>, _region: Option<String>) -> NifResult<Atom> {
     Ok(atoms::ok())
 }
 
 #[rustler::nif]
-fn create_shm_pool(_display: ResourceArc<DisplayResource>, _size: u64) -> NifResult<Term> {
+fn create_shm_pool(_display: ResourceArc<DisplayResource>, _size: u64) -> NifResult<Atom> {
     Err(Error::Term(Box::new("create_shm_pool not yet implemented".to_string())))
 }
 
 #[rustler::nif]
-fn create_buffer(_pool: Term, _offset: u64, _width: u32, _height: u32, _stride: u32, _format: u32) -> NifResult<Term> {
+fn create_buffer(_pool: String, _offset: u64, _width: u32, _height: u32, _stride: u32, _format: u32) -> NifResult<Atom> {
     Err(Error::Term(Box::new("create_buffer not yet implemented".to_string())))
 }
 
 #[rustler::nif]
-fn create_region(_compositor: Term) -> NifResult<Term> {
+fn create_region(_compositor: String) -> NifResult<Atom> {
     Err(Error::Term(Box::new("create_region not yet implemented".to_string())))
 }
 
 #[rustler::nif]
-fn region_add(_region: Term, _x: i32, _y: i32, _width: i32, _height: i32) -> NifResult<Atom> {
+fn region_add(_region: String, _x: i32, _y: i32, _width: i32, _height: i32) -> NifResult<Atom> {
     Ok(atoms::ok())
 }
 
 #[rustler::nif]
-fn region_subtract(_region: Term, _x: i32, _y: i32, _width: i32, _height: i32) -> NifResult<Atom> {
+fn region_subtract(_region: String, _x: i32, _y: i32, _width: i32, _height: i32) -> NifResult<Atom> {
     Ok(atoms::ok())
 }
 
 #[rustler::nif]
-fn set_event_handler(_object: Term, _handler_pid: Term) -> NifResult<Atom> {
+fn set_event_handler(_object: String, _handler_pid: String) -> NifResult<Atom> {
     Ok(atoms::ok())
 }
 
 #[rustler::nif]
-fn remove_event_handler(_object: Term) -> NifResult<Atom> {
+fn remove_event_handler(_object: String) -> NifResult<Atom> {
     Ok(atoms::ok())
 }
 
@@ -356,34 +372,6 @@ fn get_protocol_version(_interface: String) -> NifResult<(Atom, u32)> {
 
 rustler::init!(
     "Elixir.WaylandClient.Nif",
-    [
-        connect,
-        connect_to_display,
-        disconnect,
-        is_connected,
-        flush_events,
-        get_fd,
-        roundtrip,
-        create_surface,
-        destroy_surface,
-        surface_attach,
-        surface_damage,
-        surface_commit,
-        surface_set_input_region,
-        surface_set_opaque_region,
-        get_registry,
-        list_globals,
-        bind_global,
-        create_shm_pool,
-        create_buffer,
-        create_region,
-        region_add,
-        region_subtract,
-        set_event_handler,
-        remove_event_handler,
-        get_version,
-        get_protocol_version,
-    ],
     load = on_load
 );
 
