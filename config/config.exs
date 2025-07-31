@@ -26,5 +26,3 @@ config :wayland_client,
 
   # Whether to log protocol events (development only)
   log_events: Mix.env() == :dev
-
-config :wayland_client, WaylandClient.Nif, crate: :wayland_client

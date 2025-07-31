@@ -8,13 +8,6 @@ defmodule WaylandClient.MixProject do
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      # compilers: [:rustler] ++ Mix.compilers(),
-      # rustler_crates: [
-      #   wayland_client_nif: [
-      #     path: "native/wayland_client",
-      #     mode: rustler_mode(Mix.env())
-      #   ]
-      # ],
       package: package(),
       description: description(),
       source_url: "https://github.com/adamcstephens/wayland",
@@ -33,8 +26,6 @@ defmodule WaylandClient.MixProject do
 
   defp deps do
     [
-      # Rustler dependency disabled due to hex.pm access issues
-      # Enable when hex.pm access is available:
       {:rustler, "~> 0.36.2"}
     ]
   end
@@ -50,4 +41,3 @@ defmodule WaylandClient.MixProject do
     ]
   end
 end
-
